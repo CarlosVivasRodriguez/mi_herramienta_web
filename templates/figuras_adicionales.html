@@ -1,0 +1,259 @@
+<!-- Texto explicativo para las figuras 3, 4 y 5 -->
+<div class="texto-explicativo" style="margin-bottom: 20px; text-align: justify;">
+    <p>In the following figures, the analysis of the selected species is presented using their complete proteomes, meaning the set of all proteins they produce.</p>
+    <p>Figure 4 displays an UpSet plot that represents the orthogroups identified in the selected species. An orthogroup is a set of proteins that share a common evolutionary origin and are grouped together to reflect their shared evolutionary history. The connected points in the matrix indicate which combinations of species share the same orthogroups, and the bar chart at the top represents the number of orthogroups present in each species combination.</p>
+    <p>Figure 5 also uses an UpSet plot, but in this case, it focuses on the total number of proteins present in the set of orthogroups for the selected species. Similar to Figure 4, the bar chart at the top shows how many proteins belong to each species combination within the orthogroups, while the matrix below indicates which species are involved in each combination.</p>
+    <p>This analysis is useful for understanding the distribution of proteins in orthogroups, allowing for the identification of which species contribute most to certain orthogroups and how they relate to each other in terms of their proteomic content. This type of graphical representation provides a clear visualization of how many orthogroups are shared among different species combinations, which helps identify evolutionary patterns and phylogenetic relationships among them. Although the proteins within an orthogroup are evolutionarily related, they do not necessarily perform the exact same function, although they often have similar or related functions, especially in the case of orthologs.</p>
+</div>
+
+<!-- Figura 3 -->
+{% if img_path_3 %}
+    <h3>Figure 3 - Distribution of Unique and Shared Proteins</h3>
+    <h4>Overview of protein diversity among selected species.</h4>
+    <p style="font-size: smaller; color: gray;">* This figure illustrates the percentage of unique and shared proteins across the selected species, highlighting the relationship between species based on their protein content.</p>
+    <img src="{{ url_for('static', filename='plots/' + img_path_3) }}" alt="Figure 3" style="max-width: 100%; height: auto;">
+    <a href="{{ url_for('download_image', filename=img_path_3) }}">Download Figure 3</a>
+{% endif %}
+
+<!-- Figura 4 -->
+{% if img_path_4 %}
+    <h3>Figure 4 - UpSet Plot of Shared Orthogroups</h3>
+    <h4>Visualization of orthogroups shared by selected species.</h4>
+    <p style="font-size: smaller; color: gray;">* This figure displays the orthogroups that are shared among the selected species, providing insight into the genetic relationships and common ancestry of the species analyzed.</p>
+    <div class="scroll-container" style="overflow-x: auto; white-space: nowrap;">
+        <img src="{{ url_for('static', filename='plots/' + img_path_4) }}" alt="Figure 4">
+    </div>
+    <a href="{{ url_for('download_image', filename=img_path_4) }}">Download Figure 4</a>
+{% endif %}
+
+<!-- Botón para crear el archivo de datos Excel para Figuras 4 y 5 -->
+<div class="boton-centrado">
+    <button class="boton-excel" id="create-excel-btn" onclick="createExcel()">Create Data Excel</button>
+</div>
+
+<!-- Sección de carga y descarga para el archivo Excel de Figuras 4 y 5 -->
+<div id="loading-message" class="boton-centrado" style="display: none;">Loading...</div>
+<div id="download-link" class="boton-centrado" style="display: none;">
+    <a href="{{ url_for('download_excel') }}">Descargar tabla de datos</a>
+</div>
+
+
+<!-- Figura 5 -->
+{% if img_path_5 %}
+    <h3>Figure 5 - UpSet Plot of Proteins within Orthogroups</h3>
+    <h4>Total number of proteins found in shared orthogroups.</h4>
+    <p style="font-size: smaller; color: gray;">* This figure presents the total number of proteins associated with the shared orthogroups identified in the previous figure, illustrating the richness of proteins related to the species interactions.</p>
+    <div class="scroll-container" style="overflow-x: auto; white-space: nowrap;">
+        <img src="{{ url_for('static', filename='plots/' + img_path_5) }}" alt="Figure 5">
+    </div>
+    <a href="{{ url_for('download_image', filename=img_path_5) }}">Download Figure 5</a>
+{% endif %}
+
+<hr class="separador">
+
+<!-- Differential Proteome Analysis -->
+<div class="boton-centrado">
+    <button class="boton-especial" id="differential-proteome-btn" onclick="toggleProteomeInput()">Differential Proteome Analysis</button>
+</div>
+
+<!-- Cuadro de texto para ingresar los UniProt IDs -->
+<div id="proteome-input-section" style="display: none; text-align: center;">
+    <textarea id="proteome-input" rows="4" cols="50" placeholder="Paste your Data [Only Uniprot IDs]"></textarea>
+    <br>
+    <!-- Botón para generar las nuevas figuras (figuras 6 y 7) -->
+    <button class="boton-generar" id="generate-figures-btn" onclick="generateNewFigures()">Generate New Figures</button>
+</div>
+
+
+<!-- Loading spinner para las nuevas figuras (Figuras 6 y 7) -->
+<div id="loading-spinner-proteome" class="loading-spinner" style="display: none; text-align: center; margin-top: 20px;">
+    <div class="spinner"></div>
+    <p>Generating new figures, please wait...</p>
+</div>
+
+<!-- Sección para mostrar las nuevas figuras generadas dinámicamente (Figuras 6 y 7) -->
+<div id="new-figures-section" style="margin-top: 20px; text-align: center;">
+    <!-- Figura 6 -->
+    {% if img_path_6 %}
+        <div class="figura-scrollable" id="figura6">
+            <h3>Figure 6 - UpSet Plot of Orthogroups (Differential Proteome)</h3>
+            <div class="scroll-container" style="overflow-x: auto; white-space: nowrap;">
+                <img src="{{ url_for('static', filename='plots/' + img_path_6) }}" alt="Figure 6">
+            </div>
+            <a href="{{ url_for('download_image', filename=img_path_6) }}">Download Figure 6</a>
+        </div>
+    {% endif %}
+
+    <!-- Figura 7 -->
+    {% if img_path_7 %}
+        <div class="figura-scrollable" id="figura7">
+            <h3>Figure 7 - UpSet Plot of Proteins (Differential Proteome)</h3>
+            <div class="scroll-container" style="overflow-x: auto; white-space: nowrap;">
+                <img src="{{ url_for('static', filename='plots/' + img_path_7) }}" alt="Figure 7">
+            </div>
+            <a href="{{ url_for('download_image', filename=img_path_7) }}">Download Figure 7</a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Botón para descargar el archivo Excel de Proteome solo si las figuras 6 y 7 han sido generadas -->
+{% if img_path_6 and img_path_7 %}
+    <div class="boton-centrado">
+        <button class="boton-excel" id="create-excel-proteome-btn" onclick="createExcelProteomeFiltrado()">Create Proteome Data Excel</button>
+    </div>
+{% endif %}
+
+
+<!-- Sección de carga y descarga para el archivo Excel de las Figuras 6 y 7 -->
+<div id="loading-message-proteome" class="boton-centrado" style="display: none;">Loading...</div>
+<div id="download-link-proteome" class="boton-centrado" style="display: none;">
+    <a href="{{ url_for('create_excel_proteome_filtrado') }}">Descargar tabla de datos de Proteome</a>
+</div>
+
+
+<script>
+    
+    
+    function toggleProteomeInput() {
+        const inputSection = document.getElementById('proteome-input-section');
+        inputSection.style.display = inputSection.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function generateNewFigures() {
+        const proteomeData = document.getElementById('proteome-input').value;
+
+        // Validación: Asegúrate de que hay datos en el input
+        if (!proteomeData.trim()) {
+            alert('Please enter data before generating new figures.');
+            return;
+        }
+
+        document.getElementById('loading-spinner-proteome').style.display = 'block'; // Mostrar spinner
+
+        fetch('{{ url_for("generate_new_figures") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: proteomeData })
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Network response was not ok');
+            return response.json();
+        })
+        .then(data => {
+            document.getElementById('loading-spinner-proteome').style.display = 'none'; // Ocultar spinner
+            const newFiguresSection = document.getElementById('new-figures-section');
+            newFiguresSection.innerHTML = ''; // Limpiar la sección para nuevas figuras
+
+            if (data.img_path_6) {
+                newFiguresSection.innerHTML += `
+                    <div class="figura-scrollable" id="figura6">
+                        <h3>Figure 6 - UpSet Plot of Orthogroups (Differential Proteome)</h3>
+                        <div class="scroll-container" style="overflow-x: auto; white-space: nowrap;">
+                            <img src="/static/plots/${data.img_path_6}" alt="Figure 6">
+                        </div>
+                        <a href="/download/${data.img_path_6}">Download Figure 6</a>
+                    </div>`;
+            }
+
+            if (data.img_path_7) {
+                newFiguresSection.innerHTML += `
+                    <div class="figura-scrollable" id="figura7">
+                        <h3>Figure 7 - UpSet Plot of Proteins (Differential Proteome)</h3>
+                        <div class="scroll-container" style="overflow-x: auto; white-space: nowrap;">
+                            <img src="/static/plots/${data.img_path_7}" alt="Figure 7">
+                        </div>
+                        <a href="/download/${data.img_path_7}">Download Figure 7</a>`;
+            }
+
+            if (data.img_path_6 && data.img_path_7) {
+                newFiguresSection.innerHTML += `
+                    <div class="boton-centrado">
+                        <button class="boton-excel" id="create-excel-proteome-btn">Create Proteome Data Excel</button>
+                    </div>`;
+                
+                // Ahora añadimos el evento click de forma dinámica usando JavaScript
+                const excelButton = document.getElementById('create-excel-proteome-btn');
+                excelButton.addEventListener('click', createExcelProteomeFiltrado); // Asigna la función JavaScript
+            }
+
+        })
+        .catch(error => {
+            console.error('Error generating new figures:', error);
+            document.getElementById('loading-spinner-proteome').style.display = 'none'; // Ocultar spinner
+            alert('An error occurred while generating new figures. Please try again. Error details: ' + error.message);
+        });
+    }
+
+    function createExcelProteomeFiltrado() {
+        console.log('Botón clicado');
+        const uniprotInput = document.getElementById('proteome-input').value;
+        const uniprot_ids = uniprotInput.split(',').map(id => id.trim());
+
+        // Validación: Asegúrate de que los UniProt IDs son válidos
+        if (!uniprot_ids.length || uniprot_ids.every(id => id === '')) {
+            alert('Por favor, introduce los UniProt IDs antes de generar el archivo Excel.');
+            return;
+        }
+
+        // Mostrar el mensaje de carga
+        document.getElementById('loading-message-proteome').style.display = 'block'; 
+        document.getElementById('download-link-proteome').style.display = 'none';    
+
+        // Deshabilitar el botón para evitar clics múltiples
+        const excelButton = document.getElementById('create-excel-proteome-btn');
+        excelButton.disabled = true;
+
+        fetch('{{ url_for("create_excel_proteome_filtrado") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uniprot_ids: uniprot_ids })
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Error al generar el archivo Excel de Proteome');
+            return response.blob();
+        })
+        .then(blob => {
+            // Ocultar mensaje de carga
+            document.getElementById('loading-message-proteome').style.display = 'none';
+
+            // Crear un enlace temporal para descargar el archivo
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'UpSetPlot_Filtrado.xlsx'; 
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);  
+
+            // Rehabilitar el botón
+            excelButton.disabled = false;
+
+            // Mostrar el enlace de descarga
+            document.getElementById('download-link-proteome').style.display = 'block';
+        })
+        .catch(error => {
+            console.error('Error al generar el archivo Excel:', error);
+            alert('Hubo un problema al generar el archivo Excel de Proteome. Por favor, inténtalo de nuevo.');
+            document.getElementById('loading-message-proteome').style.display = 'none';
+            excelButton.disabled = false;
+        });
+    }
+
+    function createExcel() {
+        document.getElementById('loading-message').style.display = 'block';
+        document.getElementById('download-link').style.display = 'none';
+
+        fetch('{{ url_for("create_excel") }}')
+        .then(response => {
+            if (!response.ok) throw new Error('Error al generar el archivo Excel');
+            document.getElementById('loading-message').style.display = 'none';
+            document.getElementById('download-link').style.display = 'block';
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Hubo un problema al generar el archivo Excel. Por favor, inténtalo de nuevo.');
+            document.getElementById('loading-message').style.display = 'none';
+        });
+    }
+</script>

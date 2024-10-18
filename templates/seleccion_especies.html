@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seleccionar Especies</title>
+</head>
+<body>
+    <h1>Selecciona las especies para análisis</h1>
+
+    <form action="{{ url_for('seleccion_especies') }}" method="POST" onsubmit="return validateSelection();">
+        {% for specie in species %}
+            <input type="checkbox" name="especies" value="{{ specie }}"> {{ specie }}<br>
+        {% endfor %}
+        <input type="hidden" name="ruta_carpeta" value="{{ ruta_carpeta }}">
+        <button type="submit">Generar Figura</button>
+    </form>
+
+    <!-- Aquí insertamos la imagen justo después del formulario -->
+    <div style="text-align: center; margin-top: 20px;">
+        <img src="{{ url_for('static', filename='images/image.png') }}" 
+             alt="Group of Species" style="max-width: 80%; height: auto;">
+    </div>
+
+    <br>
+    <a href="/">Volver para cargar otro archivo</a>
+
+    <script>
+        function validateSelection() {
+            const checkboxes = document.querySelectorAll('input[name="especies"]:checked');
+            if (checkboxes.length === 0) {
+                alert('Por favor selecciona al menos una especie.');
+                return false;
+            }
+            return true;
+        }
+    </script>
+</body>
+</html>
