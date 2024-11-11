@@ -1,22 +1,36 @@
 import os
+import zipfile
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import requests
+from goatools.obo_parser import GODag
+from pathlib import Path
+import shutil
+import re
 import numpy as np
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, jsonify  # Mueve jsonify aquí
+from matplotlib import colormaps
 from matplotlib.gridspec import GridSpec  # Para las subgráficas en figura 3
+from matplotlib.ticker import MaxNLocator  # Asegúrate de importar esto
 from itertools import cycle  # Para generar combinaciones de colores
 from upsetplot import UpSet, from_memberships  # Para generar UpSet plots
 import warnings  # Para ignorar advertencias que no necesitas en el contexto de la app
 import io  # Para manejo de buffers en memoria
 import matplotlib.colors as mcolors
 import webbrowser  # Importa el módulo para abrir el navegador automáticamente
-import threading  # Para manejar el temporizador que abre el navegador con retras
+import threading  # Para manejar el temporizador que abre el navegador con retraso
+import matplotlib.cm as cm
+import time
+import gzip
+from goatools.anno.gaf_reader import GafReader
+from goatools.obo_parser import GODag
+from goatools.goea.go_enrichment_ns import GOEnrichmentStudy
+import traceback 
 
 # Importamos y configuramos matplotlib para evitar errores de GUI al generar figuras
 import matplotlib
-matplotlib.use('Agg')  # Establece el backend 'Agg' para evitar errores de GUI en servidores
-
+matplotlib.use('Agg') 
 # Inicializamos la aplicación Flask aquí
 app = Flask(__name__)
 
@@ -32,8 +46,10 @@ species_selected = None
 ortogrupos_por_combinacion = None
 abreviaturas = None
 selected_orthogroups = None
+species_urls = None 
+selected_orthogroups_list = None
+final_protein_list = None
 
-# Función para cargar los datos
 def cargar_datos_carpeta(ruta_carpeta):
     print(f"Archivos en la carpeta '{ruta_carpeta}':")
     print(os.listdir(ruta_carpeta))
@@ -59,17 +75,14 @@ def cargar_datos_carpeta(ruta_carpeta):
     
     return gene_count_df, orthogroups_df, single_copy_df, unassigned_df
 
-# Función para eliminar archivos temporales
 def eliminar_archivo(ruta_archivo):
     if os.path.exists(ruta_archivo):
         os.remove(ruta_archivo)
 
-# Función para asegurarse de que el directorio 'plots' exista
 def crear_directorio_plots():
     if not os.path.exists(os.path.join('static', 'plots')):
         os.makedirs(os.path.join('static', 'plots'))
 
-# Función para generar la primera figura (barras amarillas)
 def generar_figura_1(gene_count_df):
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -156,7 +169,6 @@ def generar_figura_1(gene_count_df):
 
     return 'figura_1.png'
 
-# Función para generar la segunda figura (barras azules)
 def generar_figura_2(gene_count_df, axes=None):
     # Crear los ejes si no se proporcionan
     if axes is None:
@@ -178,15 +190,23 @@ def generar_figura_2(gene_count_df, axes=None):
     axes.set_xlabel('Number of Species Sharing Orthogroups', fontsize=14)
     axes.set_ylabel('Count', fontsize=14)
 
+    # Obtener el total de bins en el eje X
+    total_bins = len(unique_orthogroups)
+
+    # Establecer nbins como la mitad de los bins totales
+    nbins = max(1, total_bins // 2)  # Aseguramos que al menos haya 1 bin
+
+    # Limitar el número de etiquetas en el eje X a la mitad de los bins totales
+    axes.xaxis.set_major_locator(MaxNLocator(integer=True, prune='both', nbins=nbins))
+
+    # Guardar la imagen
     crear_directorio_plots()
-    
     image_path = os.path.join('static', 'plots', 'figura_2.png')
     plt.savefig(image_path)
     plt.close(fig)
 
     return 'figura_2.png'
 
-# Función para generar la tercera figura con tres subgráficas y combinaciones
 def generar_figura_3(gene_count_df, species, umbral=7):
     fig = plt.figure(figsize=(30, 17))  # Ajustamos el tamaño de la figura
     gs = GridSpec(2, 2, width_ratios=[2, 1], height_ratios=[3, 1])  # Tamaño relativo de los subgráficos
@@ -249,31 +269,34 @@ def generar_figura_3(gene_count_df, species, umbral=7):
     n_especies = {k: len(k.split(' + ')) for k in porcentajes.keys()}
     utilizados = sorted(set(n_especies.values()))
 
-    # Paleta de colores de Vega (category30 + un color extra)
-    vega_palette = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#66c2a5", "#46f0f0", "#f032e6", "#bcf60c", "#fabebe",
-                    "#9a6324", "#e6beff", "#9a6324", "#fffac8", "#800000", "#aaffc3", "#808000", "#ffd8b1", "#000075", "#808080",
-                    "#ffffff", "#000000", "#d2f53c", "#fabebe", "#008080", "#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#aaffc3"]
-    color_cycle = cycle(vega_palette)
+    ### Asignación de colores usando Viridis para combinaciones de especies
+    cmap_combinaciones = colormaps.get_cmap('viridis')  # Sin el tercer argumento
 
-    # Asignar colores basados en el número de especies que forman cada combinación
+    # Generar los colores utilizando un rango basado en el número de "utilizados"
+    colores_combinaciones = [cmap_combinaciones(i / (len(utilizados) - 1)) for i in range(len(utilizados))]
+
+    # Asignar los colores a cada combinación de especies
     colores = {}
-    especies_por_n = sorted(utilizados)  # Aseguramos el orden para asignar colores
-    for i, n in enumerate(especies_por_n):
-        color = next(color_cycle)
+    for i, n in enumerate(utilizados):
+        color = colores_combinaciones[i]  # Asignar color de Viridis
         for k in n_especies:
             if n_especies[k] == n:
-                colores[k] = color
+                colores[k] = color  # Asignar el color de Viridis a cada combinación de especies
 
-    # Figura 2: Colorear en base a las primeras 5 letras de las especies (con colores claros)
+    ### Asignación de colores claros manuales para la tabla de abreviaturas
     colores_claros = ["#add8e6", "#90ee90", "#ffb6c1", "#ffa07a", "#f0e68c", "#e0ffff", "#fafad2", "#d3d3d3", "#ffefd5", "#ffdab9",
-                      "#e6e6fa", "#dda0dd", "#b0e0e6", "#bc8f8f", "#f5f5dc", "#ffe4e1", "#d8bfd8", "#d2b48c", "#add8e6", "#deb887"]
+                    "#e6e6fa", "#dda0dd", "#b0e0e6", "#bc8f8f", "#f5f5dc", "#ffe4e1", "#d8bfd8", "#d2b48c", "#add8e6", "#deb887"]
     color_cycle_claros = cycle(colores_claros)
 
-    abreviaturas_cortas = {sp: sp[:5] for sp in species}
-    unique_groups = list(set(abreviaturas_cortas.values()))
+    abreviaturas_cortas = {sp: sp[:5] for sp in species}  # Abreviaturas cortas (5 caracteres)
+    unique_groups = list(set(abreviaturas_cortas.values()))  # Grupos únicos basados en las abreviaturas
     group_colors = {group: next(color_cycle_claros) for group in unique_groups}  # Asignamos un color claro a cada grupo
 
-   
+    ### Asignación de colores usando Viridis para los grupos de abreviaturas
+    cmap_grupos = colormaps.get_cmap('viridis')  # Sin el tercer argumento
+    colores_grupos = [cmap_grupos(i / (len(unique_groups) - 1)) for i in range(len(unique_groups))]
+
+
     # Crear la tabla de abreviaturas
     tabla_abreviaturas = pd.DataFrame(list(abreviaturas.items()), columns=['Strain Name', 'Abbreviation'])
     tabla = ax2.table(cellText=tabla_abreviaturas.values, cellLoc='center', loc='center')
@@ -467,7 +490,6 @@ def crear_upset_plot_proteinas(gene_count_df, species, title, ortogrupos_por_com
 
     return f'{title.replace(" ", "_")}.png', protein_counts
 
-# Función para generar el archivo Excel
 def generar_archivo_excel_upsetplots_v2(ortogrupos_por_combinacion, orthogroups_df, species, abreviaturas, filename='UpSetPlot_Data_v2.xlsx'):
     """Genera un archivo Excel con múltiples hojas, donde cada hoja representa una combinación de especies.
     Cada hoja contiene una lista de ortogrupos y las proteínas correspondientes para cada especie en columnas separadas."""
@@ -561,8 +583,6 @@ def graficar_upset_plots_proteome(orthogroups_df, selected_orthogroups, species)
     # Devolver solo los nombres de los archivos, no las rutas completas
     return 'upset_plot_ortogrupos.png', 'upset_plot_genes.png'
 
-import re  # Importamos la librería para manejar expresiones regulares
-
 def generar_archivo_excel_upsetplots_filtrado(orthogroups_df, ortogrupos_por_combinacion, species, abreviaturas, selected_orthogroups, filename='UpSetPlot_Filtrado.xlsx'):
     """Genera un archivo Excel filtrado con los selected_orthogroups proporcionados."""
 
@@ -621,16 +641,398 @@ def generar_archivo_excel_upsetplots_filtrado(orthogroups_df, ortogrupos_por_com
 
     return filename
 
+def read_orthogroups_data(zip_path):
+    """Leer y devolver el contenido del archivo Orthogroups.tsv desde un archivo ZIP."""
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        with zip_ref.open('Orthogroups.tsv') as file:
+            return pd.read_csv(file, sep='\t')
+
+def generate_go_excel(zip_path, especies_interes, output_excel_path):
+    # Utilizar la nueva función para leer datos
+    ortho_df = read_orthogroups_data(zip_path)
+
+    # Total de ortogrupos iniciales
+    ortogrupos_iniciales = ortho_df.copy()
+
+    # Calcular el porcentaje de anotación para cada ortogrupo en ortogrupos_iniciales
+    porcentajes_anotacion = []
+    for idx, row in ortogrupos_iniciales.iterrows():
+        total_proteinas = row[1:].notna().sum()  # Número total de proteínas en el ortogrupo
+        proteinas_interes = row[especies_interes].notna().sum()  # Número de proteínas de las especies de interés
+        porcentaje_anotacion = (proteinas_interes / total_proteinas) * 100 if total_proteinas > 0 else 0
+        porcentajes_anotacion.append(porcentaje_anotacion)
+
+    # Añadir el porcentaje de anotación como una nueva columna en ortogrupos_iniciales
+    ortogrupos_iniciales.insert(1, 'Annotation Percentage', porcentajes_anotacion)
+
+    # Filtrar los ortogrupos que contienen al menos una proteína de alguna de las especies de interés
+    ortogrupos_filtrados = ortho_df[ortho_df[especies_interes].notna().any(axis=1)].copy()
+    ortogrupos_eliminados = ortho_df[~ortho_df.index.isin(ortogrupos_filtrados.index)].copy()
+    ortogrupos_filtrados_interes = ortogrupos_filtrados[["Orthogroup"] + especies_interes].copy()
+    ortogrupos_filtrados_interes['Annotation Percentage'] = [p for p in porcentajes_anotacion if p > 0]
+
+    # Guardar los resultados en un archivo Excel
+    with pd.ExcelWriter(output_excel_path) as writer:
+        ortogrupos_iniciales.to_excel(writer, sheet_name='Initial Groups', index=False)
+        ortogrupos_filtrados.to_excel(writer, sheet_name='Filtered Groups', index=False)
+        ortogrupos_eliminados.to_excel(writer, sheet_name='Removed Groups', index=False)
+        ortogrupos_filtrados_interes.to_excel(writer, sheet_name='Groups of Interest', index=False)
+
+    return output_excel_path
+
+def generate_go_image(zip_path, especies_interes, output_image_path):
+
+    # Utilizar la nueva función para leer datos
+    ortho_df = read_orthogroups_data(zip_path)
+
+    # Calcular el porcentaje de anotación
+    porcentajes_anotacion = []
+    for idx, row in ortho_df.iterrows():
+        total_proteinas = row[1:].notna().sum()
+        proteinas_interes = row[especies_interes].notna().sum()
+        porcentaje_anotacion = (proteinas_interes / total_proteinas) * 100 if total_proteinas > 0 else 0
+        porcentajes_anotacion.append(porcentaje_anotacion)
+
+    # Obtener los datos de anotación de ortogrupos
+    all_annotation_percentages = pd.Series(porcentajes_anotacion)
+    non_zero_annotation_percentages = all_annotation_percentages[all_annotation_percentages > 0]
+    bins = range(0, 101, 10)  # De 0 a 100 con pasos de 10
+
+    # Crear la cuadrícula de 2x2 para las gráficas
+    fig, axes = plt.subplots(2, 2, figsize=(18, 16))
+    sns.boxplot(y=all_annotation_percentages, color="skyblue", width=0.5, ax=axes[0, 0])
+    median_all = all_annotation_percentages.median()
+    q1_all = all_annotation_percentages.quantile(0.25)
+    q3_all = all_annotation_percentages.quantile(0.75)
+    axes[0, 0].axhline(median_all, color="orange", linestyle="--", label=f"Median: {median_all:.2f}%")
+    axes[0, 0].axhline(q1_all, color="green", linestyle="--", label=f"25th Percentile (Q1): {q1_all:.2f}%")
+    axes[0, 0].axhline(q3_all, color="purple", linestyle="--", label=f"75th Percentile (Q3): {q3_all:.2f}%")
+    axes[0, 0].set_ylabel('Annotation Percentage')
+    axes[0, 0].set_title('All Orthogroups')
+    axes[0, 0].legend()
+    axes[0, 0].text(-0.1, 1, 'a)', transform=axes[0, 0].transAxes, size=14, weight='bold')
+
+    sns.boxplot(y=non_zero_annotation_percentages, color="lightgreen", width=0.5, ax=axes[0, 1])
+    median_non_zero = non_zero_annotation_percentages.median()
+    q1_non_zero = non_zero_annotation_percentages.quantile(0.25)
+    q3_non_zero = non_zero_annotation_percentages.quantile(0.75)
+    axes[0, 1].axhline(median_non_zero, color="orange", linestyle="--", label=f"Median: {median_non_zero:.2f}%")
+    axes[0, 1].axhline(q1_non_zero, color="green", linestyle="--", label=f"25th Percentile (Q1): {q1_non_zero:.2f}%")
+    axes[0, 1].axhline(q3_non_zero, color="purple", linestyle="--", label=f"75th Percentile (Q3): {q3_non_zero:.2f}%")
+    axes[0, 1].set_ylabel('Annotation Percentage')
+    axes[0, 1].set_title('Orthogroups with >0% Annotation')
+    axes[0, 1].legend()
+    axes[0, 1].text(-0.1, 1, 'b)', transform=axes[0, 1].transAxes, size=14, weight='bold')
+
+    sns.histplot(all_annotation_percentages, bins=bins, color="cornflowerblue", kde=True, edgecolor="black", ax=axes[1, 0])
+    axes[1, 0].set_xticks(bins)
+    axes[1, 0].set_xlabel('Annotation Percentage')
+    axes[1, 0].set_ylabel('Number of Orthogroups')
+    axes[1, 0].set_title('Annotation Percentage Distribution - All Orthogroups')
+    axes[1, 0].text(-0.1, 1, 'c)', transform=axes[1, 0].transAxes, size=14, weight='bold')
+
+    for patch in axes[1, 0].patches:
+        height = patch.get_height()
+        if height > 0:
+            axes[1, 0].text(patch.get_x() + patch.get_width() / 2, height + 50, f'{int(height)}', ha='center', va='bottom')
+
+    sns.histplot(non_zero_annotation_percentages, bins=bins, color="lightgreen", kde=True, edgecolor="black", ax=axes[1, 1])
+    axes[1, 1].set_xticks(bins)
+    axes[1, 1].set_xlabel('Annotation Percentage')
+    axes[1, 1].set_ylabel('Number of Orthogroups')
+    axes[1, 1].set_title('Annotation Percentage Distribution - Orthogroups with >0% Annotation')
+    axes[1, 1].text(-0.1, 1, 'd)', transform=axes[1, 1].transAxes, size=14, weight='bold')
+
+    # Añadir etiquetas de frecuencia en el histograma de ortogrupos >0%
+    for patch in axes[1, 1].patches:
+        height = patch.get_height()
+        if height > 0:
+            axes[1, 1].text(
+                patch.get_x() + patch.get_width() / 2,
+                height + 50,
+                f'{int(height)}',
+                ha='center',
+                va='bottom'
+            )
+
+    plt.tight_layout()
+    fig.savefig(output_image_path)
+    plt.close()
+
+    return output_image_path
+
+# Inicializar GODag después de asegurar que go_obo_file existe
+go_obo_file = os.path.join('GOA_files', 'go-basic.obo')
+if os.path.exists(go_obo_file):
+    godag = GODag(go_obo_file)
+else:
+    raise FileNotFoundError("El archivo go-basic.obo no se encontró en la ruta especificada.")
+
+def download_gaf_files(uniprot_ids):
+    # Inicialización de id2gos y species_map
+    id2gos = {uid: set() for uid in uniprot_ids}
+    species_map = {}
+    goa_files_dir = 'GOA_files'
+    os.makedirs(goa_files_dir, exist_ok=True)  # Crear directorio si no existe
+
+    # URLs de descarga de archivos GAF
+    species_urls = {
+        'Pseudomonas_aeruginosa_PAO1': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/36.P_aeruginosa_LMG_12228.goa',
+        'Pseudomonas_putida_KT2440': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/109.P_putida_KT2440.goa',
+        'Staphylococcus_aureus_PS47': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/22608.S_aureus_NCTC_8325.goa',
+        'Mycobacteroides_abscessus_ATCC_19977': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/30878.M_abscessus.goa',
+        'Mycobacterium_tuberculosis_H37Rv': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/30.M_tuberculosis_ATCC_25618.goa',
+        'Mycobacterium_smegmatis_NCTC_8159': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/25827.M_smegmatis.goa',
+        'Burkholderia_multivorans_ATCC_17616': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/31241.B_multivorans_Tohoku_University.goa',
+        'Burkholderia_pseudomallei_K96243': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/20343.B_pseudomallei_K96243.goa',
+        'Burkholderia_gladioli_BSR3': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/266524.B_gladioli_(strain_BSR3).goa',
+        'Stenotrophomonas_maltophilia_K279A': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/30999.S_maltophilia_K279a.goa',
+        'Haemophilus_influenzae_ATCC_51907': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/21.H_influenzae_ATCC_51907.goa',
+        'Nocardia_farcinica_IFM_10152': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/20447.N_farcinica.goa',
+        'Inquilinus_limosus': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/4109793.I_limosus.goa',
+        'Acinetobacter_baumannii_ATCC_19606': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/283653.A_baumannii_ATCC_19606_=_CIP_7034.goa',
+        'Klebsiella_pneumoniae_HS11286': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/269360.K_pneumoniae_subsp_pneumoniae_HS11286.goa',
+        'Escherichia_coli_K12': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/18.E_coli_MG1655.goa',
+        'Escherichia_coli_O157H7': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/20.E_coli_Sakai.goa',
+        'Pandoraea_sputorum': 'https://ftp.ebi.ac.uk/pub/databases/GO/goa/proteomes/4128204.P_sputorum.goa',
+    }
+
+    # Descargar archivos GAF
+    for species, url in species_urls.items():
+        filename = os.path.join(goa_files_dir, Path(url).name)
+        if not os.path.exists(filename):  # Descargar solo si no existe
+            retries = 3
+            for attempt in range(retries):
+                try:
+                    print(f"Downloading {species} from {url}... (Try {attempt + 1}/{retries})")
+                    response = requests.get(url, stream=True, timeout=10)  # Timeout agregado
+                    response.raise_for_status()  # Lanzar excepción si hay error en la solicitud
+                    with open(filename, 'wb') as f:
+                        shutil.copyfileobj(response.raw, f)
+                    print(f"Downloaded {filename}")
+                    break  # Salir del bucle si la descarga es exitosa
+                except requests.exceptions.RequestException as e:
+                    print(f"Error downloading {url}: {e}")
+                    if attempt < retries - 1:
+                        print("Retrying...")
+                        time.sleep(5)  # Esperar antes de reintentar
+                    else:
+                        print("Failed to download after multiple attempts. Moving on.")
+
+    # Descargar el archivo go-basic.obo si no existe
+    go_obo_file = os.path.join(goa_files_dir, "go-basic.obo")
+    if not os.path.exists(go_obo_file):
+        try:
+            print("Downloading GO OBO file...")
+            response = requests.get("http://purl.obolibrary.org/obo/go/go-basic.obo", timeout=10)
+            response.raise_for_status()
+            with open(go_obo_file, 'wb') as f:
+                f.write(response.content)
+            print("Downloaded GO OBO file.")
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading GO OBO file: {e}")
+
+    return id2gos, species_map, go_obo_file
+
+def generate_foreground_analysis(uniprot_ids, use_orthogroups, ortogrupos_iniciales, ortogrupos_filtrados_interes):
+    """Realiza el análisis de foreground basado en UniProt IDs y opción de ortogrupos."""
+    
+    # Validar que haya UniProt IDs proporcionados
+    if not uniprot_ids:
+        raise ValueError("No UniProt IDs provided for analysis.")
+
+    # Descargar y obtener id2gos, species_map y go_obo_file
+    id2gos, species_map, go_obo_file = download_gaf_files(uniprot_ids)
+
+    # Convertir UniProt IDs a conjunto para operaciones rápidas
+    uniprot_set = set(uniprot_ids)
+    selected_orthogroups = set()
+    protein_set = set()  # Usar un conjunto para evitar duplicados
+
+    if use_orthogroups:
+        for _, row in ortogrupos_iniciales.iterrows():
+            orthogroup_id = row['Orthogroup']
+            proteins = row[1:]
+            for protein in proteins.dropna():
+                if not isinstance(protein, str):
+                    protein = str(protein)
+                protein_ids = re.findall(r'\|([^|]+)\|', protein)
+                if any(uid in uniprot_set for uid in protein_ids):
+                    selected_orthogroups.add(orthogroup_id)
+                    break
+        selected_orthogroups_list = list(selected_orthogroups)
+        for ortogroup_id in selected_orthogroups_list:
+            filtered_rows = ortogrupos_filtrados_interes[ortogrupos_filtrados_interes['Orthogroup'] == ortogroup_id]
+            for _, row in filtered_rows.iterrows():
+                proteins = row.dropna().astype(str)
+                for protein in proteins:
+                    if protein != 'Porcentaje de Anotación':
+                        protein_ids = re.findall(r'\|([^|]+)\|', protein)
+                        protein_set.update(protein_ids)
+    else:
+        protein_set.update(uniprot_ids)
+        for _, row in ortogrupos_iniciales.iterrows():
+            orthogroup_id = row['Orthogroup']
+            proteins = row[1:]
+            for protein in proteins.dropna():
+                if not isinstance(protein, str):
+                    protein = str(protein)
+                protein_ids = re.findall(r'\|([^|]+)\|', protein)
+                if any(uid in uniprot_set for uid in protein_ids):
+                    selected_orthogroups.add(orthogroup_id)
+                    break
+
+    final_protein_list = list(protein_set)
+    return final_protein_list, selected_orthogroups_list
+
+def load_background(file_path):
+    with open(file_path, 'r') as f:
+        ids = {line.strip().strip('"').strip(',') for line in f if line.strip()}
+    return ids
+##################################################################################################################
+def ensure_gaf_file(gaf_file, species):
+    if not os.path.exists(gaf_file):
+        # Lógica de descarga (similar a la que ya tienes)
+        try:
+            # Descarga el archivo, descomprime si es necesario
+            pass
+        except requests.exceptions.RequestException as e:
+            print(f"Error al descargar {gaf_file}: {e}")
+    return gaf_file
+
+def filter_by_depth(results, min_depth=2):
+    return [r for r in results if godag.query_term(r.GO).depth >= min_depth]
+
+def serialize_go_result(result):
+    return {
+        "GO": result.GO,
+        "name": result.goterm.name,
+        "p_fdr_bh": result.p_fdr_bh
+    }
 
 
+def get_species_gaf_files():
+    return {
+        'Pseudomonas_aeruginosa_PAO1': 'GOA_files/36.P_aeruginosa_LMG_12228.goa',
+        'Pseudomonas_putida_KT2440': 'GOA_files/109.P_putida_KT2440.goa',
+        'Staphylococcus_aureus_PS47': 'GOA_files/22608.S_aureus_NCTC_8325.goa',
+        'Mycobacteroides_abscessus_ATCC_19977': 'GOA_files/30878.M_abscessus.goa',
+        'Mycobacterium_tuberculosis_H37Rv': 'GOA_files/30.M_tuberculosis_ATCC_25618.goa',
+        'Mycobacterium_smegmatis_NCTC_8159': 'GOA_files/25827.M_smegmatis.goa',
+        'Burkholderia_multivorans_ATCC_17616': 'GOA_files/31241.B_multivorans_Tohoku_University.goa',
+        'Burkholderia_pseudomallei_K96243': 'GOA_files/20343.B_pseudomallei_K96243.goa',
+        'Burkholderia_gladioli_BSR3': 'GOA_files/266524.B_gladioli_(strain_BSR3).goa',
+        'Stenotrophomonas_maltophilia_K279A': 'GOA_files/30999.S_maltophilia_K279a.goa',
+        'Haemophilus_influenzae_ATCC_51907': 'GOA_files/21.H_influenzae_ATCC_51907.goa',
+        'Nocardia_farcinica_IFM_10152': 'GOA_files/20447.N_farcinica.goa',
+        'Inquilinus_limosus': 'GOA_files/4109793.I_limosus.goa',
+        'Acinetobacter_baumannii_ATCC_19606': 'GOA_files/283653.A_baumannii_ATCC_19606_=_CIP_7034.goa',
+        'Klebsiella_pneumoniae_HS11286': 'GOA_files/269360.K_pneumoniae_subsp_pneumoniae_HS11286.goa',
+        'Escherichia_coli_K12': 'GOA_files/18.E_coli_MG1655.goa',
+        'Escherichia_coli_O157H7': 'GOA_files/20.E_coli_Sakai.goa',
+        'Pandoraea_sputorum': 'GOA_files/4128204.P_sputorum.goa',
+    }
 
+def generate_go_figure(bp_results, cc_results, mf_results):
+    """Genera un gráfico con los resultados de análisis GO para BP, CC y MF."""
+
+    # Validar que hay resultados para graficar
+    if not bp_results and not cc_results and not mf_results:
+        raise ValueError("No significant GO results provided for plotting.")
+
+    # Preparar los datos para las gráficas con longitud máxima de nombres
+    def prepare_plot_data(results, max_label_length=20):
+        go_terms = [
+            (r['name'][:max_label_length] + '...' if len(r['name']) > max_label_length else r['name'])
+            for r in results
+        ]
+        p_values = [-np.log10(r['p_fdr_bh']) for r in results]
+        return go_terms, p_values
+
+    bp_terms, bp_pvalues = prepare_plot_data(bp_results) if bp_results else (["No terms"], [0])
+    cc_terms, cc_pvalues = prepare_plot_data(cc_results) if cc_results else (["No terms"], [0])
+    mf_terms, mf_pvalues = prepare_plot_data(mf_results) if mf_results else (["No terms"], [0])
+
+    # Crear la figura y definir el diseño
+    fig = plt.figure(figsize=(20, 15))
+    gs = GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[0.25, 0.75])
+
+    # Gráfico para Biological Process (BP) - Panel izquierdo
+    ax_bp = fig.add_subplot(gs[:, 0])  # Ocupa ambas filas
+    ax_bp.barh(bp_terms, bp_pvalues, color='lightblue')
+    ax_bp.set_xlabel('-log10(p-value)')
+    ax_bp.set_ylabel('GO Terms')
+    ax_bp.set_title('GO Enrichment Analysis - Biological Process')
+
+    # Gráfico para Cellular Component (CC) - Panel superior derecho
+    ax_cc = fig.add_subplot(gs[0, 1])
+    ax_cc.barh(cc_terms, cc_pvalues, color='lightgreen')
+    ax_cc.set_xlabel('-log10(p-value)')
+    ax_cc.set_ylabel('GO Terms')
+    ax_cc.set_title('GO Enrichment Analysis - Cellular Component')
+
+    # Gráfico para Molecular Function (MF) - Panel inferior derecho
+    ax_mf = fig.add_subplot(gs[1, 1])
+    ax_mf.barh(mf_terms, mf_pvalues, color='lightcoral')
+    ax_mf.set_xlabel('-log10(p-value)')
+    ax_mf.set_ylabel('GO Terms')
+    ax_mf.set_title('GO Enrichment Analysis - Molecular Function')
+
+    # Ajustar diseño para evitar superposición de elementos
+    plt.tight_layout()
+
+    # Comprobar si la carpeta de salida existe y guardar la figura
+    output_dir = os.path.join('static', 'plots')
+    os.makedirs(output_dir, exist_ok=True)
+    figure_name = 'go_analysis_figure.png'
+    output_path = os.path.join(output_dir, figure_name)
+    plt.savefig(output_path)
+    plt.close(fig)
+
+    print(f"GO analysis figure saved at {output_path}.")  # Debugging print
+    return figure_name  # Devolver solo el nombre del archivo
+    pass
+
+def create_go_excel_report(bp_results, cc_results, mf_results):
+    """Genera un archivo Excel con 3 hojas: BP, CC y MF, con columnas de Procedimiento y -log10(p-value)."""
+    def prepare_excel_data(results):
+        """Prepara los datos para el Excel con el procedimiento y -log10(p-value)."""
+        data = []
+        for r in results:
+            data.append({
+                "Procedure": r.goterm.name,  # Cambiado de r["name"] a r.goterm.name
+                "-log10(p-value)": -np.log10(r.p_fdr_bh) if r.p_fdr_bh > 0 else 0  # Cambiado de r["p_fdr_bh"] a r.p_fdr_bh
+            })
+        return pd.DataFrame(data)
+
+    # Preparar los datos para cada hoja
+    bp_df = prepare_excel_data(bp_results)
+    cc_df = prepare_excel_data(cc_results)
+    mf_df = prepare_excel_data(mf_results)
+
+    # Crear el directorio si no existe
+    output_dir = 'static/data_folder'
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, 'go_enrichment_report.xlsx')
+
+    # Crear el archivo Excel
+    with pd.ExcelWriter(output_path) as writer:
+        bp_df.to_excel(writer, sheet_name='BP', index=False)
+        cc_df.to_excel(writer, sheet_name='CC', index=False)
+        mf_df.to_excel(writer, sheet_name='MF', index=False)
+
+    print(f"Excel file generated at {output_path}")
+    return output_path
+    pass
+
+##################################################################################################################
 def open_browser():
     webbrowser.open("http://127.0.0.1:5000")
-#####################################################################
-#####################################################################
-#            AQUI EMPIEZA LA PARTE DE @APP ROUTE
-#####################################################################
-#####################################################################
+############################################################################################################
+############################################################################################################
+###############################   AQUI EMPIEZA LA PARTE DE @APP ROUTE     ##################################
+############################################################################################################
+############################################################################################################
 
 # Rutas para la web
 @app.route('/')
@@ -836,12 +1238,340 @@ def create_excel_proteome_filtrado():
 
     return send_file(excel_filename, as_attachment=True)
 
+@app.route('/generate_go_excel', methods=['POST'])
+def generate_go_excel_route():
+    try:
+        # Definir las especies de interés
+        especies_interes = [
+            'Pseudomonas aeruginosa PAO1',
+            'Pseudomonas putida KT2440',
+            'Staphylococcus aureus PS47',
+            'Mycobacteroides abscessus ATCC 19977',
+            'Mycobacterium tuberculosis H37Rv',
+            'Mycobacterium smegmatis NCTC 8159',
+            'Burkholderia multivorans ATCC_17616',
+            'Burkholderia pseudomallei K96243',
+            'Burkholderia gladioli BSR3',
+            'Stenotrophomonas maltophilia K279A',
+            'Haemophilus influenzae ATCC 51907',
+            'Nocardia farcinica IFM 10152',
+            'Inquilinus limosus',
+            'Acinetobacter baumannii ATCC 19606',
+            'Klebsiella pneumoniae HS11286',
+            'E.Coli K12',
+            'E.Coli O157H7',
+            'Pandoraea sputorum NCTC13161'
+        ]
+        zip_path = os.path.join('static', 'data_folder', 'Orthogroups.zip')
+        output_excel_path = os.path.join('static', 'data_folder', 'Gene_Ontology_Analysis.xlsx')
+        
+        # Llamada a la función para generar el Excel
+        excel_file_path = generate_go_excel(zip_path, especies_interes, output_excel_path)
+        return send_file(excel_file_path, as_attachment=True)
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+@app.route('/generate_go_image', methods=['POST'])
+def generate_go_image_route():
+    try:
+        # Definir las especies de interés
+        especies_interes = [
+            'Pseudomonas aeruginosa PAO1',
+            'Pseudomonas putida KT2440',
+            'Staphylococcus aureus PS47',
+            'Mycobacteroides abscessus ATCC 19977',
+            'Mycobacterium tuberculosis H37Rv',
+            'Mycobacterium smegmatis NCTC 8159',
+            'Burkholderia multivorans ATCC_17616',
+            'Burkholderia pseudomallei K96243',
+            'Burkholderia gladioli BSR3',
+            'Stenotrophomonas maltophilia K279A',
+            'Haemophilus influenzae ATCC 51907',
+            'Nocardia farcinica IFM 10152',
+            'Inquilinus limosus',
+            'Acinetobacter baumannii ATCC 19606',
+            'Klebsiella pneumoniae HS11286',
+            'E.Coli K12',
+            'E.Coli O157H7',
+            'Pandoraea sputorum NCTC13161'
+        ]
+        zip_path = os.path.join('static', 'data_folder', 'Orthogroups.zip')
+        output_image_path = os.path.join('static', 'plots', 'Gene_Ontology_Annotation.png')
+        
+        # Llamada a la función para generar la imagen
+        image_file_path = generate_go_image(zip_path, especies_interes, output_image_path)
+        return jsonify({"image_file_path": os.path.basename(image_file_path)})
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+@app.route('/foreground_analysis', methods=['POST'])
+def foreground_analysis():
+    """Endpoint para manejar el análisis de foreground basado en UniProt IDs."""
+    try:
+        # Obtener datos enviados por el cliente
+        uniprot_ids = request.json.get('uniprot_ids', [])
+        use_orthogroups = request.json.get('use_orthogroups', False)  # Valor del checkbox
+        print("Received UniProt IDs:", uniprot_ids)  # Debugging print
+        print("Use Orthogroups flag:", use_orthogroups)  # Debugging print
+
+        # Validar entrada
+        if not uniprot_ids:
+            return jsonify({"error": "No UniProt IDs provided"}), 400
+
+        # Verificar si el archivo existe antes de cargarlo
+        excel_path = 'static/data_folder/Gene_Ontology_Analysis.xlsx'
+        if not os.path.exists(excel_path):
+            print("Gene Ontology Analysis file not found at:", excel_path)  # Debugging print
+            return jsonify({"error": "Gene Ontology Analysis file not found."}), 404
+
+        # Cargar las hojas necesarias del archivo
+        try:
+            print("Loading sheets from Excel file...")  # Debugging print
+            ortogrupos_iniciales = pd.read_excel(excel_path, sheet_name='Initial Groups')
+            ortogrupos_filtrados_interes = pd.read_excel(excel_path, sheet_name='Groups of Interest')
+            print("Sheets loaded successfully.")  # Debugging print
+        except Exception as e:
+            print("Error reading Excel sheets:", str(e))  # Debugging print
+            return jsonify({"error": f"Error reading Excel sheets: {str(e)}"}), 500
+
+        # Ejecutar análisis de foreground
+        print("Running foreground analysis...")  # Debugging print
+        foreground_proteins, selected_orthogroups_list = generate_foreground_analysis(
+            uniprot_ids=uniprot_ids,
+            use_orthogroups=use_orthogroups,
+            ortogrupos_iniciales=ortogrupos_iniciales,
+            ortogrupos_filtrados_interes=ortogrupos_filtrados_interes
+        )
+        print("Foreground analysis completed.")  # Debugging print
+
+        # Guardar los resultados en la sesión
+        session['foreground_proteins'] = foreground_proteins
+        session['selected_orthogroups'] = selected_orthogroups_list
+        print("Foreground proteins and selected orthogroups saved to session.")  # Debugging print
+
+        # Mostrar resultados en la terminal
+        print("Selected Orthogroups List:", selected_orthogroups_list, flush=True)
+        print("Final Protein List (uniprot_ids):", foreground_proteins, flush=True)
+
+        # Devolver resultado en formato JSON
+        return jsonify({
+            "foreground_proteins": foreground_proteins,
+            "message": "Foreground analysis completed successfully"
+        })
+
+    except ValueError as ve:
+        print("ValueError encountered:", str(ve))  # Debugging print
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        print("Unexpected error:", str(e))  # Debugging print
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
+@app.route('/background_analysis', methods=['POST'])
+def background_analysis():
+    """Realiza el análisis de background basado en la selección de opciones y manejo de UniProt IDs."""
+    try:
+        # Recibir datos del cliente (opciones de selección y UniProt IDs personalizados)
+        data = request.json
+        background_choice = data.get('background_choice')  # Opción seleccionada (1, 2, 3, 4 o 5)
+        use_orthogroups = data.get('use_orthogroups', False)  # Booleano para ortogrupos
+        custom_uniprot_ids = data.get('custom_uniprot_ids', [])
+
+        # Cargar datos de ortogrupos iniciales y filtrados
+        excel_path = os.path.join('static', 'data_folder', 'Gene_Ontology_Analysis.xlsx')
+        ortogrupos_iniciales = pd.read_excel(excel_path, sheet_name='Initial Groups')
+        ortogrupos_filtrados_interes = pd.read_excel(excel_path, sheet_name='Groups of Interest')
+
+        # Definir la ruta base para los archivos de background
+        background_dir = os.path.join('static', 'data_folder')
+        background_files = {
+            'mycobacterium': os.path.join(background_dir, "Background_Mycobacterium_formatted.txt"),
+            'burkholderia': os.path.join(background_dir, "Background_Burkholderia_formatted.txt"),
+            'pseudomonas': os.path.join(background_dir, "Background_Pseudomonas_formatted.txt")
+        }
+
+        # Directorio donde están almacenados los archivos GAF ya descargados
+        gaf_dir = os.path.join('static', 'GOA_files')
+
+        # Inicializar el conjunto de IDs de background
+        background_ids = set()
+
+        # Procesar la opción seleccionada para cargar los UniProt IDs del background
+        if background_choice == '1':
+            background_ids = load_background(background_files['mycobacterium'])
+        elif background_choice == '2':
+            background_ids = load_background(background_files['burkholderia'])
+        elif background_choice == '3':
+            background_ids = load_background(background_files['pseudomonas'])
+        elif background_choice == '4' and custom_uniprot_ids:
+            background_ids = set(custom_uniprot_ids)
+        elif background_choice == '5':
+            # Usar archivos GAF previamente descargados
+            for file_name in os.listdir(gaf_dir):
+                if file_name.endswith('.gaf.gz'):
+                    gaf_file_path = os.path.join(gaf_dir, file_name)
+                    with gzip.open(gaf_file_path, 'rt') as f:
+                        gaf_reader = GafReader(f)
+                        for protein_id, go_ids in gaf_reader.get_id2gos_nss().items():
+                            background_ids.add(protein_id)
+        else:
+            return jsonify({"error": "Invalid background choice or missing data"}), 400
+
+        # Opcional: Manejar ortogrupos si está habilitado
+        if use_orthogroups and background_choice in ['1', '2', '3']:
+            selected_orthogroups_bg = set()
+            for _, row in ortogrupos_iniciales.iterrows():
+                orthogroup_id = row['Orthogroup']
+                proteins = row[1:]  # Todas las columnas de proteínas después de 'Orthogroup'
+                for protein in proteins.dropna():
+                    if not isinstance(protein, str):
+                        protein = str(protein)
+                    protein_ids = re.findall(r'\|([^|]+)\|', protein)
+                    if any(bg_id in background_ids for bg_id in protein_ids):
+                        selected_orthogroups_bg.add(orthogroup_id)
+                        break
+
+            # Expandir los UniProt IDs del background usando los ortogrupos seleccionados
+            background_expanded_ids = set()
+            for ortogroup_id in selected_orthogroups_bg:
+                filtered_rows = ortogrupos_filtrados_interes[
+                    ortogrupos_filtrados_interes['Orthogroup'] == ortogroup_id]
+                for _, row in filtered_rows.iterrows():
+                    proteins = row.dropna().astype(str)
+                    for protein in proteins:
+                        if protein != 'Porcentaje de Anotación':
+                            protein_ids = re.findall(r'\|([^|]+)\|', protein)
+                            background_expanded_ids.update(protein_ids)
+
+            # Actualizar el conjunto de IDs del background con los UniProt IDs ampliados
+            background_ids = background_expanded_ids
+
+        # Mostrar el número de proteínas seleccionadas como background
+        print(f"Background selected with {len(background_ids)} proteins after orthogroup expansion (if applicable).", flush=True)
+
+        # Guardar el resultado de background en la sesión
+        session['background_ids'] = list(background_ids)
+        print("Background IDs saved to session.")  # Debugging print
+
+        # Retornar los resultados como JSON
+        return jsonify({
+            "background_ids_count": len(background_ids),
+            "background_ids": list(background_ids)
+        })
+
+    except Exception as e:
+        print(f"Error during background analysis: {e}")  # Debugging print
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/gene_ontology_analysis', methods=['POST'])
+def gene_ontology_analysis():
+    try:
+        # Obtener 'uniprot_ids' y 'background_ids' desde la solicitud
+        uniprot_ids = request.json.get('uniprot_ids', [])
+        background_ids = request.json.get('background_ids', [])
+
+        # Obtener valores de Depth, P.value y Number of Terms desde la solicitud o establecer valores predeterminados
+        min_depth = request.json.get('min_depth', 2)  # Valor predeterminado: 2
+        p_value_threshold = request.json.get('p_value', 0.05)  # Valor predeterminado: 0.05
+        max_terms = request.json.get('max_terms', None)  # Valor predeterminado: None (mostrar todos)
+
+        if not uniprot_ids:
+            print("No foreground (uniprot_ids) provided for Gene Ontology Analysis.")
+            return jsonify({"error": "No foreground (uniprot_ids) provided"}), 400
+
+        if not background_ids:
+            print("No background (background_ids) provided for Gene Ontology Analysis.")
+            return jsonify({"error": "No background (background_ids) provided"}), 400
+
+        print("Foreground UniProt IDs:", uniprot_ids)
+        print("Background IDs:", background_ids)
+        print(f"Received parameters - min_depth: {min_depth}, p_value_threshold: {p_value_threshold}, max_terms: {max_terms}")
+
+        # Inicializar id2gos
+        id2gos = {uid: set() for uid in uniprot_ids}
+        species_map = {}
+
+        # Cargar archivos GAF y mapear anotaciones GO
+        species_gaf_files = get_species_gaf_files()
+        print("Loading annotations from GAF files...")
+        for species, gaf_file in species_gaf_files.items():
+            print(f"Processing GAF file for species: {species}")
+            gaf_reader = GafReader(gaf_file)
+            ns2assc = gaf_reader.get_ns2assc()
+
+            for namespace, associations in ns2assc.items():
+                for protein_id, go_ids in associations.items():
+                    if protein_id in background_ids:
+                        if protein_id not in id2gos:
+                            id2gos[protein_id] = set(go_ids)
+                            species_map[protein_id] = species
+                        else:
+                            id2gos[protein_id].update(go_ids)
+
+        print("GO annotations loaded. Running enrichment analysis...")
+
+        # Ejecutar análisis de enriquecimiento de GO
+        goea = GOEnrichmentStudy(
+            background_ids,
+            id2gos,
+            godag,  # Asegúrate de que 'godag' esté correctamente cargado
+            methods=["fdr_bh"],
+            log=None
+        )
+        goea_results = goea.run_study(uniprot_ids)
+
+        # Filtrar resultados significativos según el p-value proporcionado
+        significant_results = [r for r in goea_results if r.p_fdr_bh < p_value_threshold]
+        print(f"Found {len(significant_results)} significant GO terms after p-value filtering.")
+
+        # Filtrar resultados por tipo de categoría GO y aplicar filtro de profundidad
+        bp_results = filter_by_depth(
+            [r for r in significant_results if r.goterm.namespace == 'biological_process'], min_depth
+        )
+        cc_results = filter_by_depth(
+            [r for r in significant_results if r.goterm.namespace == 'cellular_component'], min_depth
+        )
+        mf_results = filter_by_depth(
+            [r for r in significant_results if r.goterm.namespace == 'molecular_function'], min_depth
+        )
+
+        # Limitar el número de términos si max_terms está definido
+        if max_terms:
+            bp_results = bp_results[:max_terms]
+            cc_results = cc_results[:max_terms]
+            mf_results = mf_results[:max_terms]
+
+        print(f"BP results: {len(bp_results)}")
+        print(f"CC results: {len(cc_results)}")
+        print(f"MF results: {len(mf_results)}")
+
+        # Generar la figura de análisis GO basada en los resultados obtenidos
+        figure_path = generate_go_figure(
+            [serialize_go_result(r) for r in bp_results],
+            [serialize_go_result(r) for r in cc_results],
+            [serialize_go_result(r) for r in mf_results]
+        )
+
+        print("Figure generated successfully at:", figure_path)
+
+        # Generar el archivo Excel con los resultados proporcionados
+        excel_path = create_go_excel_report(bp_results, cc_results, mf_results)
+        print("Excel file generated successfully at:", excel_path)
+
+        return jsonify({
+            "bp_results": [serialize_go_result(r) for r in bp_results],
+            "cc_results": [serialize_go_result(r) for r in cc_results],
+            "mf_results": [serialize_go_result(r) for r in mf_results],
+            "message": "Gene Ontology Analysis completed successfully",
+            "image_file_path": figure_path,  # Devolver la ruta de la imagen
+            "excel_file_path": excel_path    # Devolver la ruta del archivo Excel
+        })
+
+    except Exception as e:
+        print(f"Error during Gene Ontology Analysis: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Solo abre el navegador en el proceso principal (evita que se abra en recargas automáticas de Flask)
-    threading.Timer(1.25, open_browser).start()  # Abre el navegador después de un pequeño retraso
-    app.run(debug=True, use_reloader=False)  # Desactiva el recargador automático
+    threading.Timer(1.25, open_browser).start()  # Se abrirá el navegador automáticamente
+    app.run(debug=True, use_reloader=False)

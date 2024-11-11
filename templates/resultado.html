@@ -27,10 +27,21 @@
 
         .titulo-principal {
             text-align: center;
-            font-size: 30px;
+            font-size: 36px; /* Aumentar el tamaño de la fuente */
             font-weight: bold;
             margin-bottom: 20px;
+            color: #333; /* Cambia el color del texto */
+            background-color: #f0f0f0; /* Fondo suave */
+            padding: 10px 20px; /* Espaciado alrededor del texto */
+            border-radius: 8px; /* Bordes redondeados */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra para dar profundidad */
+            transition: transform 0.2s; /* Efecto de transición suave */
         }
+
+        .titulo-principal:hover {
+            transform: scale(1.05); /* Aumenta el tamaño ligeramente al pasar el mouse */
+        }
+
         .subtitulo {
             text-align: justify;
             font-size: 18px;
@@ -199,16 +210,43 @@
             max-width: none; /* Evita que la imagen se ajuste automáticamente */
             height: auto; /* Mantiene la proporción de la imagen */
         }
+        .contact-info {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            font-size: 12px; /* Tamaño pequeño de texto */
+            color: #555; /* Color de texto (ajústalo según tu preferencia) */
+            background-color: rgba(255, 255, 255, 0.8); /* Fondo blanco con algo de transparencia */
+            padding: 5px 10px; /* Espaciado interno */
+            border-radius: 4px; /* Bordes redondeados */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Sombra suave */
+            z-index: 1000; /* Asegura que esté por encima de otros elementos */
+        }
+
+        .contact-info a {
+            color: #555; /* Color del enlace */
+            text-decoration: none; /* Elimina el subrayado */
+        }
+
+        .contact-info a:hover {
+            text-decoration: underline; /* Subraya al pasar el mouse */
+        }
 
     </style>
 </head>
 <body>
+
+    <div class="contact-info">
+        Carlos Vivas Rodríguez<br>
+        <a href="mailto:carlos.vivasrodriguez@ucdconnect.ie">carlos.vivasrodriguez@ucdconnect.ie</a>
+    </div>
+    
     <div class="container">
         <div class="titulo-principal">COMPLETE ANALYSIS</div>
 
         <!-- Subheading explaining the two figures -->
         <div class="subtitulo">
-            Below are two graphs that represent the analysis of the 31 species present in the ZIP file you uploaded. 
+            Below are two graphs that represent the analysis of the {{ species|length }} species present in the ZIP file you uploaded. 
             <br> 
             The first graph (Figure 1) shows the distribution of proteins by orthogroup, while the second graph (Figure 2) 
             illustrates the number of species sharing orthogroups.
@@ -239,6 +277,7 @@
             </div>
         </div>
         <!-- Línea separativa después de la primera sección -->
+        <hr class="separador">
         <hr class="separador">
 
         <!-- Botón "Species Analysis" para mostrar las especies y la imagen -->
@@ -274,15 +313,204 @@
         <div class="boton-centrado">
             <button class="boton-generar" id="boton-generar-figuras" style="display: none;" type="submit" form="form-seleccion-especies">Generate Figures</button>
         </div>
-        
-        <!-- Línea separativa después de la primera sección -->
-        <hr class="separador">
 
         <!-- Loading spinner -->
         <div id="loading-spinner" class="loading-spinner">
             <div class="spinner"></div>
             <p>Generating figures, please wait...</p>
         </div>
+
+        <!-- Línea separativa después de la primera sección -->
+        <hr class="separador">
+
+        <!-- Botón "Gene Ontology Analysis" y su funcionalidad -->
+        <!-- Botón para el análisis de Gene Ontology - Generar Figura -->
+        <div id="go-image-section" class="boton-centrado" style="display: block;">
+            <button class="boton-especial" id="gene-ontology-btn" onclick="triggerGeneOntologyImage()">Gene Ontology Analysis</button>
+        </div>
+
+        <!-- Spinner de carga para el análisis GO (Imagen) -->
+        <div id="loading-spinner-go" class="loading-spinner" style="display: none; text-align: center; margin-top: 20px;">
+            <div class="spinner"></div>
+            <p>Generating Gene Ontology Image, please wait...</p>
+        </div>
+
+        <!-- Figura 8 - Gene Ontology Annotation -->
+        <div id="go-image-container" style="display: none; text-align: center;">
+            <h3>Figure 8 - Gene Ontology Annotation</h3>
+            <h4>Annotation Percentage Distribution among Orthogroups.</h4>
+            <p style="font-size: smaller; color: gray;">* This figure presents the annotation percentage distribution for all orthogroups and orthogroups with annotation >0%, providing insight into gene ontology annotation.</p>
+            <img src="" alt="Figure 8" id="go-figure" style="max-width: 80%; height: auto;">
+            <a href="#" id="go-image-download-link" style="display: none;">Download Figure 8</a>
+        </div>
+
+        <!-- Botón para generar el Excel de Gene Ontology -->
+        <div id="go-excel-section" class="boton-centrado" style="display: none;">
+            <button class="boton-excel" id="gene-ontology-excel-btn" onclick="triggerGeneOntologyExcelGeneration()">Generate Gene Ontology Excel</button>
+        </div>
+        
+        <!-- Línea separativa después de la primera sección -->
+        <hr class="separador">
+        <!-- Línea separativa después de la primera sección -->
+        <hr class="separador">
+
+        <!-- Spinner de carga para el análisis GO (Excel) -->
+        <div id="loading-spinner-go-excel" class="loading-spinner" style="display: none; text-align: center; margin-top: 20px;">
+            <div class="spinner"></div>
+            <p>Generating Gene Ontology Excel, please wait...</p>
+        </div>
+
+        <!-- Sección para descargar el archivo Excel resultante -->
+        <div id="download-link-go" class="boton-centrado" style="display: none;">
+            <a id="download-go-link" href="#">Download Gene Ontology Analysis Excel</a>
+        </div>
+
+        <div id="gene-ontology-info" class="subtitulo" style="display: none;">
+            <p>
+                In Gene Ontology (GO) analysis, the **Foreground** (or target group) and the **Background** (or reference group) are key concepts that enable meaningful interpretation of results. The <strong>Foreground</strong> represents the specific set of proteins or genes of interest that we aim to analyze in detail. For example, it may consist of differentially expressed proteins identified in an experiment or elements that exhibit notable changes in expression or function.
+            </p>
+            <p>
+                Conversely, the <strong>Background</strong> defines the reference context against which the Foreground results are compared. This could encompass all identified proteins within an organism, a specific group of proteins detected in a set of samples, or proteins associated with particular experimental conditions. Choosing an appropriate Background is crucial for ensuring the statistical validity and biological relevance of enrichment analysis, as it serves as a baseline for determining whether a specific GO annotation is more (or less) prevalent in the Foreground than expected by chance.
+            </p>
+            <p>
+                <strong>Importance of Orthogroups</strong>
+            </p>
+            <p>
+                <strong>Orthogroups</strong> are sets of genes or proteins that are homologous and typically maintain similar functions across different species. Leveraging orthogroups in analyses expands the knowledge base and functional comparisons by considering shared functions across multiple organisms. This is especially valuable for identifying conserved patterns across species and highlighting biological processes that may be evolutionarily essential. Including orthogroups in Gene Ontology analysis facilitates robust comparisons, detection of common biological processes, and a deeper understanding of functional organization across various biological contexts.
+            </p>
+            <p>
+                An illustrative example of the value of this approach is seen with <strong>Burkholderia</strong>. For this species, we lack a specific file containing Gene Ontology terms. However, through the use of orthogroups and comparisons with other species that do possess GO annotation files, it is possible to infer valuable functional insights for <strong>Burkholderia</strong> proteins. This comparative approach leverages evolutionary relationships and functional similarities, providing a deeper and more comprehensive analysis even for organisms with limited data. It underscores the importance of using orthogroups and evolutionary context in GO analyses, enabling functional interpretations based on data from well-characterized organisms, thereby enhancing our understanding of biological processes.
+            </p>
+        </div>
+        
+        <!-- Sección de Foreground Analysis -->
+        <div id="foreground-analysis-section" style="display: none; margin-top: 20px; padding: 15px; border: 1px solid #ccc; background-color: #f5f5f5; border-radius: 5px;">
+            <h3>Foreground Analysis Input</h3>
+            <!-- Entrada de texto para UniProt IDs -->
+            <div style="text-align: center; margin-bottom: 15px;">
+                <textarea id="uniprot-input" rows="4" cols="50" placeholder="Paste your UniProt IDs here, separated by spaces"></textarea>
+            </div>
+            <!-- Checkbox para seleccionar el uso de orthogroups -->
+            <div style="text-align: center; margin-bottom: 20px;">
+                <label>
+                    <input type="checkbox" id="use-orthogroups"> Use Orthogroups
+                </label>
+            </div>
+            <!-- Botón para enviar la solicitud de análisis -->
+            <div style="text-align: center;">
+                <button id="analyze-foreground-btn" class="boton-excel">Save Foreground</button>
+                <span id="save-foreground-message" style="display: none; color: red; margin-left: 10px;">SAVED</span>
+            </div>
+            <!-- Spinner de carga para el análisis de foreground -->
+            <div id="loading-spinner-foreground" class="loading-spinner" style="display: none; text-align: center; margin-top: 20px;">
+                <div class="spinner"></div>
+                <p>Saving Foreground, please wait...</p>
+            </div>
+        </div>
+
+
+        <!-- Sección de Background Analysis -->
+        <div id="background-analysis-section" style="display: none; margin-top: 20px; padding: 15px; border: 1px solid #ccc; background-color: #f5f5f5; border-radius: 5px;">
+            <h3>Background Analysis Input</h3>
+            <!-- Opciones de Background en radio buttons y campos -->
+            <div style="display: flex; justify-content: space-between;">
+                <div style="flex: 1; margin-right: 10px;">
+                    <div>
+                        <input type="radio" id="mycobacterium" name="background" value="1">
+                        <label for="mycobacterium">Proteins detected in Mycobacterium proteomics</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="burkholderia" name="background" value="2">
+                        <label for="burkholderia">Proteins detected in Burkholderia proteomics</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="pseudomonas" name="background" value="3">
+                        <label for="pseudomonas">Proteins detected in Pseudomonas proteomics</label>
+                    </div>
+                </div>
+                <div style="flex: 1; margin-left: 10px;">
+                    <div>
+                        <input type="radio" id="custom-list" name="background" value="4">
+                        <label for="custom-list">Paste a custom list of UniProt IDs</label>
+                    </div>
+                    <div id="custom-uniprot-section-bg" style="display: none; margin-top: 10px;">
+                        <textarea id="custom-uniprot-input-bg" rows="4" cols="50" placeholder="Paste your UniProt IDs here, separated by spaces or line breaks"></textarea>
+                    </div>
+                    <div>
+                        <input type="radio" id="generic" name="background" value="5">
+                        <label for="generic">Use the entire GOA file as background (generic mode)</label>
+                    </div>
+                </div>
+            </div>
+            <!-- Checkbox para seleccionar el uso de orthogroups -->
+            <div id="use-orthogroups-bg-section" style="text-align: center; margin-top: 20px;">
+                <label>
+                    <input type="checkbox" id="use-orthogroups-bg"> Use Orthogroups
+                </label>
+            </div>
+            <!-- Botón para enviar la solicitud de análisis de Background -->
+            <div id="background-save-button-section" style="text-align: center; margin-top: 10px;">
+                <button id="analyze-background-btn" class="boton-excel">Save Background</button>
+                <span id="save-background-message" style="display: none; color: red; margin-left: 10px;">SAVED</span>
+            </div>
+        </div>
+
+        
+        <!-- Spinner de carga para el análisis de background -->
+        <div id="loading-spinner-background" class="loading-spinner" style="display: none; text-align: center; margin-top: 20px;">
+            <div class="spinner"></div>
+            <p>Saving Background, please wait...</p>
+        </div>
+        
+        
+        <!-- Botón para generar Gene Ontology Figures -->
+        <div id="go-figure-section" style="display: none; text-align: center;">
+            <button id="generate-go-figures-btn" class="boton-generar">Generate Gene Ontology Figures</button>
+        </div>
+        <!-- Spinner de carga para la generación de la figura de GO -->
+        <div id="loading-spinner-go-figure" class="loading-spinner" style="display: none; text-align: center; margin-top: 20px;">
+            <div class="spinner"></div>
+            <p>Generating Gene Ontology Figure, please wait...</p>
+        </div>
+
+        <!-- Contenedor para mostrar la figura generada (Figura 9) -->
+        <div id="go-figure-container" style="display: none; text-align: center; margin-top: 20px;">
+            <h3>Figure 9 - Gene Ontology Enrichment Analysis</h3>
+            <p style="font-size: smaller; color: gray;">* This figure displays the enriched GO terms in Biological Process, Cellular Component, and Molecular Function categories.</p>
+            <img src="" alt="Figure 9" id="go-figure-9" style="max-width: 80%; height: auto;">
+            <a href="#" id="go-figure-download-link-9" style="display: none;">Download Figure 9</a>
+            <a href="#" id="go-excel-download-link-9" style="display: none;">Download GO Enrichment Excel</a>
+        </div>
+
+        <!-- Inputs para los parámetros de regeneración de la Figura 9 -->
+        <div id="figure-parameters-container" style="display: none; text-align: center; margin-top: 20px;">
+            <h4>Adjust Parameters for Re-Generating Figure 9</h4>
+            <div style="display: flex; justify-content: center; gap: 20px; margin-bottom: 15px;">
+                <div>
+                    <label for="depth-input">Depth:</label><br>
+                    <input type="number" id="depth-input" min="1" value="2" style="width: 80px;">
+                </div>
+                <div>
+                    <label for="pvalue-input">P-value:</label><br>
+                    <input type="number" id="pvalue-input" step="0.01" min="0" max="1" value="0.05" style="width: 80px;">
+                </div>
+                <div>
+                    <label for="terms-input">Number of Terms:</label><br>
+                    <input type="number" id="terms-input" min="1" placeholder="All" style="width: 80px;">
+                </div>
+            </div>
+            <button id="regenerate-figure-btn" class="boton-generar">Re-Generate Figure 9</button>
+        </div>
+
+        <!-- Link de descarga para el Excel generado (Figura 9) -->
+        <div id="go-excel-container" style="display: none; text-align: center; margin-top: 10px;">
+            <a id="go-excel-download-link" href="#" style="display: none;">Download GO Enrichment Excel</a>
+        </div>
+
+
+        <hr id="linea-separativa-1" class="separador" style="display: none; border: none; height: 4px; background-color: #000000; margin: 20px 0;">
+        <hr id="linea-separativa-2" class="separador" style="display: none; border: none; height: 4px; background-color: #000000; margin: 20px 0;">
+        
 
         <!-- Div for dynamically added figures with horizontal scroll -->
         <div id="figuras-adicionales">
@@ -313,12 +541,12 @@
             </div>
         </div>
     </div>
-
+    
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        $(document).ready(function(){
+        $(document).ready(function() {
             // Cuando se hace clic en el botón "Species Analysis"
-            $('#boton-analisis').on('click', function(){
+            $('#boton-analisis').on('click', function() {
                 // Muestra el contenedor de selección de especies
                 $('#especies-seleccionadas').slideDown();
                 // Muestra el botón "Generate Figures"
@@ -326,7 +554,7 @@
             });
     
             // Envía el formulario vía AJAX con un spinner de carga
-            $('#form-seleccion-especies').on('submit', function(event){
+            $('#form-seleccion-especies').on('submit', function(event) {
                 event.preventDefault();
                 // Validar si se seleccionó al menos una especie
                 if ($('input[name="especies"]:checked').length === 0) {
@@ -339,28 +567,342 @@
                 $('#loading-spinner').show();
     
                 // Obtener la URL para la solicitud AJAX desde un atributo data-url
-                var url = $(this).data('url'); 
+                var url = $(this).data('url');
     
                 // Enviar solicitud AJAX
                 $.ajax({
                     type: 'POST',
                     url: url, // URL recibida del atributo data-url
                     data: formData,
-                    success: function(response){
+                    success: function(response) {
                         $('#figuras-adicionales').html(response);
                         // Ocultar el spinner cuando se completa la solicitud
                         $('#loading-spinner').hide();
                     },
-                    error: function(){
+                    error: function() {
                         alert('Error generating figures.');
                         // Ocultar el spinner si ocurre un error
                         $('#loading-spinner').hide();
                     }
                 });
             });
+            function triggerGeneOntologyImage() {
+                document.getElementById('loading-spinner-go').style.display = 'block';
+
+                fetch('/generate_go_image', {  // Ajusta la ruta a la correspondiente en tu aplicación
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    document.getElementById('loading-spinner-go').style.display = 'none';
+
+                    const goFigure = document.querySelector('img[alt="Figure 8"]');
+                    if (goFigure && data.image_file_path) {  // Asegúrate de que data contiene el path
+                        goFigure.src = `/static/plots/${data.image_file_path}`;
+                        goFigure.parentElement.style.display = 'block';
+
+                        const generateExcelButton = document.getElementById('go-excel-section');
+                        if (generateExcelButton) {
+                            generateExcelButton.style.display = 'block';
+                        }
+
+                        const geneOntologyInfo = document.getElementById('gene-ontology-info');
+                        if (geneOntologyInfo) {
+                            geneOntologyInfo.style.display = 'block';
+                        }
+
+                        $('#foreground-analysis-section').show();
+                        document.getElementById('linea-separativa-1').style.display = 'block';
+                        document.getElementById('linea-separativa-2').style.display = 'block';
+                    } else {
+                        console.error("Figure 8 element not found or missing image path in response.");
+                    }
+                })
+                .catch(error => {
+                    console.error('Error generating Gene Ontology Image:', error);
+                    document.getElementById('loading-spinner-go').style.display = 'none';
+                    alert('An error occurred during Gene Ontology Analysis.');
+                });
+            }
+  
+            function triggerGeneOntologyExcelGeneration() {
+                document.getElementById('loading-spinner-go-excel').style.display = 'block';
+
+                fetch('/generate_go_excel', {  // Ajusta la ruta a la correspondiente en tu aplicación
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    document.getElementById('loading-spinner-go-excel').style.display = 'none';
+
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Gene_Ontology_Analysis.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+
+                    const downloadLink = document.getElementById('download-go-link');
+                    if (downloadLink) {
+                        downloadLink.href = url;
+                        downloadLink.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error generating Gene Ontology Excel:', error);
+                    document.getElementById('loading-spinner-go-excel').style.display = 'none';
+                    alert('An error occurred during Gene Ontology Excel Generation.');
+                });
+            }
+
+    
+            // Manejar la solicitud de análisis de foreground
+            $('#analyze-foreground-btn').on('click', function() {
+                console.log("Starting foreground analysis...");
+                const uniprotIDs = $('#uniprot-input').val().trim().split(/\s+/);
+                const useOrthogroups = $('#use-orthogroups').is(':checked');
+
+                if (!uniprotIDs || uniprotIDs.length === 0 || uniprotIDs[0] === "") {
+                    alert('Please enter at least one UniProt ID.');
+                    console.warn("No UniProt IDs provided.");
+                    return;
+                }
+
+                console.log("Sending foreground analysis request with UniProt IDs:", uniprotIDs);
+                $('#loading-spinner-foreground').show();
+
+                $.ajax({
+                    type: 'POST',
+                    url: '/foreground_analysis',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        uniprot_ids: uniprotIDs,
+                        use_orthogroups: useOrthogroups
+                    }),
+                    success: function(response) {
+                        $('#loading-spinner-foreground').hide();
+                        console.log('Foreground analysis response:', response);
+                        window.foregroundUniProtIDs = response.foreground_proteins || [];
+
+                        // Mostrar la sección de background y los elementos relacionados
+                        $('#background-analysis-section').show();
+                        $('#use-orthogroups-bg-section').show(); // Asegúrate de que esta línea esté aquí si no se muestra
+                        $('#background-save-button-section').show(); // Mostrar el botón de guardar background
+                    },
+                    error: function(xhr, status, error) {
+                        $('#loading-spinner-foreground').hide();
+                        console.error('Error during foreground analysis:', error);
+                        alert('An error occurred during the foreground analysis.');
+                    }
+                });
+            });
+   
+            // Mostrar la sección de UniProt personalizada solo si se selecciona la opción 4
+            $('input[name="background"]').on('change', function() {
+                // Asegurar que solo una opción esté seleccionada
+                $('input[name="background"]').not(this).prop('checked', false);
+            
+                if ($(this).val() === '4') {
+                    $('#custom-uniprot-section-bg').show();
+                } else {
+                    $('#custom-uniprot-section-bg').hide();
+                }
+            });
+    
+            // Manejar la solicitud de análisis de background
+            $('#analyze-background-btn').on('click', function() {
+                    console.log("Starting background analysis...");
+                    const selectedBackground = $('input[name="background"]:checked').val();
+                    const useOrthogroups = $('#use-orthogroups-bg').is(':checked');
+                    const customUniProtIDs = $('#custom-uniprot-input-bg').val().trim().split(/\s+/);
+
+                    if (!selectedBackground) {
+                        alert('Please select a background option.');
+                        console.warn("No background option selected.");
+                        return;
+                    }
+
+                    console.log("Sending background analysis request with selection:", selectedBackground);
+                    $('#loading-spinner-background').show();
+
+                    $.ajax({
+                        type: 'POST',
+                        url: '/background_analysis',
+                        contentType: 'application/json',
+                        data: JSON.stringify({
+                            background_choice: selectedBackground,
+                            use_orthogroups: useOrthogroups,
+                            custom_uniprot_ids: selectedBackground === '4' ? customUniProtIDs : []
+                        }),
+                        success: function(response) {
+                            $('#loading-spinner-background').hide();
+                            console.log('Background analysis response:', response);
+                            window.backgroundIDs = response.background_ids || [];
+                            $('#go-figure-section').show();
+                        },
+                        error: function(xhr, status, error) {
+                            $('#loading-spinner-background').hide();
+                            console.error('Error during background analysis:', error);
+                            alert('An error occurred during the background analysis.');
+                        }
+                    });
+                });
+
+            // Manejar la solicitud de análisis de Gene Ontology y la generación de la figura 9
+
+            // Manejar la solicitud de análisis de Gene Ontology y la generación de la figura 9
+            $('#generate-go-figures-btn').on('click', function() {
+                console.log("Initiating Gene Ontology Analysis...");
+
+                // Asegurar que el spinner se muestre
+                $('#loading-spinner-go-figure').show();
+
+                const uniprotIDs = window.foregroundUniProtIDs || [];
+                const backgroundIDs = window.backgroundIDs || [];
+
+                if (uniprotIDs.length === 0 || backgroundIDs.length === 0) {
+                    alert("Foreground or Background IDs are missing.");
+                    console.warn("Missing UniProt or Background IDs.");
+                    $('#loading-spinner-go-figure').hide(); // Ocultar el spinner si hay un error
+                    return;
+                }
+
+                console.log("Sending Gene Ontology analysis and figure generation request with UniProt IDs:", uniprotIDs, "and Background IDs:", backgroundIDs);
+
+                // Enviar la solicitud de análisis de Gene Ontology y generación de la figura
+                $.ajax({
+                    type: 'POST',
+                    url: '/gene_ontology_analysis', // Este endpoint ahora maneja el análisis y la generación de figuras
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        uniprot_ids: uniprotIDs,
+                        background_ids: backgroundIDs
+                    }),
+                    success: function(response) {
+                        console.log("Gene Ontology Analysis and Figure generation response received:", response);
+                        $('#loading-spinner-go-figure').hide(); // Ocultar el spinner después de la respuesta
+
+                        // Mostrar la figura generada si se devuelve una ruta
+                        if (response.image_file_path) {
+                            const goFigure9 = document.getElementById('go-figure-9');
+                            if (goFigure9) {
+                                goFigure9.src = `/static/plots/${response.image_file_path}`;
+                                goFigure9.parentElement.style.display = 'block';
+
+                                // Mostrar el enlace para descargar la figura
+                                const downloadLink9 = document.getElementById('go-figure-download-link-9');
+                                if (downloadLink9) {
+                                    downloadLink9.href = `/static/plots/${response.image_file_path}`;
+                                    downloadLink9.style.display = 'block';
+                                }
+
+                                // Llamar a la función para mostrar los controles de la figura 9
+                                showFigure9Controls();
+                            } else {
+                                console.error("Figure 9 element not found.");
+                            }
+
+                            // Mostrar el enlace de descarga del Excel si se devuelve una ruta
+                            if (response.excel_file_path) {
+                                const excelDownloadLink9 = document.getElementById('go-excel-download-link-9');
+                                if (excelDownloadLink9) {
+                                    excelDownloadLink9.href = `/${response.excel_file_path}`;
+                                    excelDownloadLink9.style.display = 'block';
+                                }
+                            } else {
+                                console.error("No Excel file path returned in response.");
+                                alert("An error occurred: No Excel file generated.");
+                            }
+                        } else {
+                            console.error("No image file path returned in response.");
+                            alert("An error occurred: No new figure generated.");
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        $('#loading-spinner-go-figure').hide(); // Ocultar el spinner si hay un error
+                        console.error('Error during Gene Ontology Analysis and Figure generation:', error);
+                        alert('An error occurred during the Gene Ontology Analysis and Figure generation.');
+                    }
+                });
+            });
+
+            // Mostrar los inputs de parámetros y botón al generar Figura 9
+            function showFigure9Controls() {
+                document.getElementById('figure-parameters-container').style.display = 'block';
+            }
+
+            document.getElementById('regenerate-figure-btn').addEventListener('click', function() {
+                const minDepth = parseInt(document.getElementById('depth-input').value) || 2;
+                const pValue = parseFloat(document.getElementById('pvalue-input').value) || 0.05;
+                const maxTerms = parseInt(document.getElementById('terms-input').value) || null;
+
+                console.log("Re-Generating Figure 9 with parameters:", { minDepth, pValue, maxTerms });
+
+                // Mostrar spinner de carga al regenerar la figura
+                $('#loading-spinner-go-figure').show();
+
+                // Enviar solicitud para regenerar la figura
+                fetch('/gene_ontology_analysis', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        uniprot_ids: window.foregroundUniProtIDs || [],
+                        background_ids: window.backgroundIDs || [],
+                        min_depth: minDepth,
+                        p_value: pValue,
+                        max_terms: maxTerms
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    $('#loading-spinner-go-figure').hide();
+                    if (data.image_file_path) {
+                        const goFigure9 = document.getElementById('go-figure-9');
+                        goFigure9.src = `/static/plots/${data.image_file_path}?t=${new Date().getTime()}`; // Añadir parámetro de tiempo para forzar la actualización
+                        goFigure9.parentElement.style.display = 'block';
+
+                        const downloadLink9 = document.getElementById('go-figure-download-link-9');
+                        downloadLink9.href = `/static/plots/${data.image_file_path}`;
+                        downloadLink9.style.display = 'block';
+
+                        const excelDownloadLink9 = document.getElementById('go-excel-download-link-9');
+                        if (data.excel_file_path) {
+                            excelDownloadLink9.href = `/${data.excel_file_path}`;
+                            excelDownloadLink9.style.display = 'block';
+                        }
+                    } else {
+                        alert("An error occurred: No new figure generated.");
+                    }
+                })
+                .catch(error => {
+                    $('#loading-spinner-go-figure').hide();
+                    console.error("Error re-generating Figure 9:", error);
+                    alert("An error occurred while re-generating the figure.");
+                });
+            });
+
+
+            // Hacer que las funciones estén disponibles globalmente
+            window.triggerGeneOntologyImage = triggerGeneOntologyImage;
+            window.triggerGeneOntologyExcelGeneration = triggerGeneOntologyExcelGeneration;
         });
     </script>
     
+
+    
 </body>
 </html>
-

@@ -1,3 +1,5 @@
+<!-- Título centrado -->
+<h2 style="text-align: center; margin-bottom: 20px;">Results for Species-Based Analysis</h2>
 <!-- Texto explicativo para las figuras 3, 4 y 5 -->
 <div class="texto-explicativo" style="margin-bottom: 20px; text-align: justify;">
     <p>In the following figures, the analysis of the selected species is presented using their complete proteomes, meaning the set of all proteins they produce.</p>
@@ -34,7 +36,7 @@
 <!-- Sección de carga y descarga para el archivo Excel de Figuras 4 y 5 -->
 <div id="loading-message" class="boton-centrado" style="display: none;">Loading...</div>
 <div id="download-link" class="boton-centrado" style="display: none;">
-    <a href="{{ url_for('download_excel') }}">Descargar tabla de datos</a>
+    <a href="{{ url_for('download_excel') }}">Download Excel File</a>
 </div>
 
 
@@ -113,10 +115,13 @@
 
 <script>
     
-    
     function toggleProteomeInput() {
         const inputSection = document.getElementById('proteome-input-section');
         inputSection.style.display = inputSection.style.display === 'none' ? 'block' : 'none';
+
+        // Mostrar también el botón Gene Ontology Analysis cuando se muestre esta sección
+        const goAnalysisSection = document.getElementById('go-analysis-section');
+        goAnalysisSection.style.display = inputSection.style.display === 'block' ? 'block' : 'none';
     }
 
     function generateNewFigures() {
@@ -256,4 +261,6 @@
             document.getElementById('loading-message').style.display = 'none';
         });
     }
+    
+
 </script>
